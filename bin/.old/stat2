@@ -1,0 +1,85 @@
+#!/usr/bin/python3
+import os
+import sys
+import time
+
+text_span = '<span font="12" rise="6144"> %s </span>'
+icon_span = '<span font="18" rise="4096" color="%s">%s</span>'
+
+sep = '<span color="#7f7f7fc8"></span>'
+tux = '<span color="#ffffff8c"> </span>'
+icpu = ''
+iclock = ''
+imem = ''
+imnt = ''
+inet = ''
+iwifi = ''
+iplug = ''
+ibatt = ['', '', '', '', '']
+colors = {
+    "ERR": "#ff8080c8",
+    "WARN": "#ffcc50c8",
+    "OK": "#80ff80c8"
+}
+
+def color(x):
+    return colors.get(x, '#ffffffc8')
+
+def status(x):
+    if x <= 70:
+        return 'OK'
+    elif x > 85:
+        return 'ERR'
+    else:
+        return 'WARN'
+
+def print_line(message):
+    """STDOUT unbuffered."""
+    sys.stdout.write(message + '\n')
+    sys.stdout.flush()
+
+def get_load():
+    procs = 4
+    load = int(os.getloadavg()[0] * 100 / procs)
+    i = icon_span % (color(status(load)), icpu)
+    s = text_span % (str(load) + '%')
+    return sep + i + s
+
+def get_mem():
+    with open('/proc/meminfo') as f:
+      t,_,a = [l.split()[1] for l in f.readlines()[:3]]
+    mem = int((1 - int(a) / int(t)) * 100)
+    i = icon_span % (color(status(mem)), imem)
+    s = text_span % (str(mem) + '%')
+    return sep + i + s
+
+def get_power():
+    with open('/sys/class/power_supply/AC/online') as plug:
+        plugged = int(plug.read(1))
+        if plugged:
+            return None
+    with open('/sys/class/power_supply/BAT0/capacity') as cap:
+        charge = int(cap.read().split('\n')[0])
+
+def get_time():
+    i = icon_span % (color('STD'), iclock)
+    s = text_span % time.strftime('%D %r')
+    return sep + i + s
+
+def get_mount():
+    pass
+
+def get_net():
+    pass
+
+def main():
+    while True:
+        try:
+            status = get_load() + get_mem() + get_time() + sep + tux
+            print_line(status)
+            time.sleep(1)
+        except KeyboardInterrupt:
+            sys.exit(1)
+
+if __name__ == '__main__':
+    main()

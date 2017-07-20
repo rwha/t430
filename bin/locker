@@ -1,0 +1,13 @@
+#!/bin/bash
+
+if [ -z "$XDG_RUNTIME_DIR" ] && [ -z "$SWAYSOCK"]; then
+	export XDG_RUNTIME_DIR="/run/user/${EUID}/"
+	export SWAYSOCK=$(find $XDG_RUNTIME_DIR -iname sway*sock)
+fi
+
+# `swaygrab` and `convert` are SLOW... even on tmpfs
+#swaygrab /tmp/${USER}-lockscreen.png
+#convert -blur 0x6 /tmp/${USER}-lockscreen.png /tmp/${USER}-lockscreen.png
+
+swaylock -i ~/pics/locked-blur.png
+

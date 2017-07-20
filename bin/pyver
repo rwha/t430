@@ -1,0 +1,20 @@
+#!/bin/bash
+
+usage() {
+	echo -e "\t USAGE: pyver [2|3]"
+	echo -e "\t if an option (2 or 3) is not provided the current version is displayed"
+	exit 
+}
+
+# Yes, terse... it's for me. I added linebreaks for you.
+[ -z $1 ] && { 
+	python -V
+	exit
+} || {
+	[[ "${EUID}" != "0" ]] && {
+		echo "Use sudo to switch python version."
+		exit 1
+	}
+	[[ "$1" -eq 2 || "$1" -eq 3 ]] && ln -sf "python${1}" $(which python) || usage
+	python -V
+}

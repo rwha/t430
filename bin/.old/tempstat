@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+#import sys
+import time
+
+#def main():
+tux = '<span font="26" color="#ffffffc8"> </span>'
+while True:
+    dt = time.strftime('%D %r')
+    string = '<span font="12" color="#ffffff">%s </span>' % dt
+    print(string)
+    time.sleep(1)
+#        except Exception as e:
+#            print('ERROR: ', e)
+#            print('exiting')
+#            sys.exit(1)
+#except KeyboardInterrupt as ke:
+#    print('quitting', ke)
+#    sys.exit(1)
+
+#if __name__ == '__main__':
+#    main()

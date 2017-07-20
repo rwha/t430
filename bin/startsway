@@ -1,0 +1,20 @@
+#!/bin/bash
+[ -n ${RXVT_DIR} ] && [ ! -d ${RXVT_DIR} ] && mkdir -p "$RXVT_DIR"
+
+start_urxvtd() {
+	local URXVT_PID=$(pidof urxvtd)
+
+	[ -n "${URXVT_PID}" ] && {
+		[ -S "${RXVT_SOCKET}" ] && return 0 || kill "${URXVT_PID}";
+	}
+	
+	urxvtd -q -f -o || {
+		echo "ERROR: cannot start urxvtd";
+		return 1;
+	}
+}
+
+start_urxvtd && ln -sf /usr/bin/urxvtc ~/bin/urxvt || ln -sf /usr/bin/urxvt ~/bin/urxvt
+
+echo "launching sway..."
+exec dbus-launch --exit-with-session sway &> /tmp/sway.log

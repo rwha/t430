@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+import time
+import io
+
+"""
+Send status information for swaybar.
+
+Parse /proc and /sys files for system status information, create
+Pango markup text for each section, print to STDOUT continuously.
+
+"""
+
+class Metric(object):
+  """
+  Create a status block dict with basic keys defined.
+  
+  No default values are accepted upon initialization. Text, 
+  color, size, etc. must all be set after creation using available 
+  methods. A dict is created and when the objected is .parsed() a
+  Pango Markup string is returned. One block per Metric object; it
+  might be better to put icons/special fonts in their own block.
+
+  """
+  def __init__(self, name):
+    self.block = {}
+    self.block.color = "#ffffffc8"
+
+  def set_text(self, string, icon=None):
+    """Set the display text for the block."""
+
+    self.block['text'] = str(string)
+    if icon:
+      self.block['icon'] = icon
+    
+  def set_color(self, color):
+    """Set the color of the display text, defaults to offwhite."""
+
+    colors = { 
+      "C_ERR": "#ff8080c8",
+      "C_WARN": "#ffcc50c8",
+      "C_OK": "#80ff80c8",
+    }
+
+    if color in colors.keys():
+      self.block['color'] = colors[color]
+
+  def set_size(self, size):
+    """Set the size in pixels.""" 
+    self.block['size'] = int(size)
+    
+  def to_span(self):
+    """Parse the values into a <span> tag and return it as a string."""
+    
+    def mkspan(text, size, color, rise=0):
+      s = '<span size="%d" rise="%d" color="%s">%s</span>' % (size, rise, color, text)
+      return s
+
+    #  My swaybar height is 36 pixels: 36864 Pango units.
+    #  Use a font size = 1024 * pixel and the a negative rise
+    #  equal to half the font size less the bar height. 
+    #  Example: font size of 12 would be "size=12288"
+    #  Then the rise would be 12288 / 2 - 36864 = "rise=-30720"
+    punit = 1024
+    bar_px = 36
+
+    if 'size' in self.block.keys():
+      font_px = int(self.block['size']) 
+      if font_px > bar_px:
+	font_px = bar_px - 2
+    else:
+      font_px = 12
+    icon_px = font_px + 2
+
+    height = bar_px * punit
+    font_size = font_px * punit
+    font_rise = font_size / 2 - height
+
+    if 'icon' in self.block.keys():
+      icon_size = icon_px * punit 
+      icon_rise = icon_size / 2 - height
+      icon_span = mkspan(self.block['icon'], icon_size, "#ffffff", icon_rise)
+    
+    text_span = mkspan(self.block['text'], font_size, self.block['color'], font_rise)
+
+    return icon_span + text_span if icon_span else text_span
+
+ 
+def get_cpu():
+  cpu = Metric('cpu_load')
+  icon = ''
+  load = os.getloadavg()
+  one, five, ten = (format(i, '.0%') for i in load)
+  all_three = "{} {} {}".format(*(one,five,ten))
+
+  big = max(load)
+  if big > 0.80:
+    cpu.text(all_three, icon, 'C_ERR')
+  elif big > 0.50:
+    cpu.text(all_three, icon, 'C_WARN')
+  else:
+    cpu.text(one, icon, 'C_OK')
+
+  return cpu.jsonify() or None
+
+def get_mem():
+  mem = Metric('mem_usage')
+  icon = ''
+  with open('/proc/meminfo') as f:
+      t,a = [l.split()[1] for l in f.readlines() if l.startswith('MemTotal') or
+              l.startswith('MemAvailable')]
+  raw = int(a) / int(t)
+  if raw > 0.3:
+      c = 'C_OK'
+  elif raw <= 0.3 and raw > 0.2:
+      c = 'C_WARN'
+  elif raw <= 0.2:
+      c = 'C_ERR'
+  
+  free = format(raw, '.0%')
+  mem.add('min_width', 80)
+  mem.add('align', 'center')
+  mem.text(free, icon, c)
+  return mem.jsonify() or None
+
+
+def get_mount():
+  mount = Metric('disk_usage')
+  icon = ''
+  # disk = /proc/partitions|/proc/diskstats|/proc/fs/
+  usage = '5%'
+  mount.text(usage, icon, 'C_OK')
+  return mount.jsonify() or None
+
+
+def get_net():
+  net = Metric('net_stat')
+  icon_w = ''
+  with open('/proc/net/dev') as f:
+    ifs = [l.split(':')[0] for l in f.readlines()[:2]]
+  devs = [i.strip() for i in ifs]
+  for dev in devs:
+    with open('/sys/class/net/' + dev + '/operstate') as f:
+      pass
+  string = 'Berlin'
+  net.text(string, icon_w, 'C_OK')
+  return net.jsonify() or None
+
+def get_power():
+  power = Metric('power')
+  icons = [ '', '⚡', '', '', '', '', '' ]
+
+  with open('/sys/class/power_supply/AC/online') as plug:
+    plugged = int(plug.read(1))
+  with open('/sys/class/power_supply/BAT0/capacity') as cap:
+    charge = int(cap.read().split('\n')[0])
+
+  if not plugged:
+    if charge >= 50:
+      icon = icons[3]
+      color = 'C_OK'
+    if charge < 50 and charge > 20:
+      icon = icons[4]
+      color = 'C_WARN'
+    elif charge <= 20 and charge > 10:
+      icon = icons[5]
+      color = 'C_ERR'
+    elif charge <= 10:
+      icon = icons[6]
+      color = 'C_ERR'
+      power.add('urgent', true)
+  else:
+    icon = icons[0]
+    color = 'C_OK'
+
+  power.text('{}%'.format(charge), icon, color)
+  return power.jsonify() or None
+
+def get_date():
+  date_block = Metric('date')
+  icon = ''
+  string = time.strftime('%m/%d/%Y')
+  date_block.text(string, color='C_STD')
+  date_block.add('separator', False)
+  date_block.add('markup', 'pango')
+  return date_block.jsonify() or None
+
+def get_time():
+  time_block = Metric('time')
+  icon = ''
+  string = time.strftime('%I:%M %p')
+  time_block.text(string, color='C_STD')
+  time_block.add('separator', False)
+  time_block.add('markup', 'pango')
+  return time_block.jsonify() or None
+
+def status_block():
+    block = []
+    block.append(get_cpu())
+    block.append(get_mem())
+#    block.append(get_mount())
+#    block.append(get_net())
+    block.append(get_power())
+    block.append(get_date())
+    block.append(get_time())
+    block.append(json.dumps({"full_text": "", "color": "#ffffffc8", "separator": False, "min_width": 40}))
+    #block.append(json.dumps({"full_text": "", "color": "#ffffffc8", "separator": False}))
+    while None in block:
+        block.remove(None)
+
+    return ','.join(block)
+
+def main():
+    """ Prints the header, initializes the infinite array, loops status. """
+
+    header = {
+      "version": 1,
+      "stop_signal": 10,
+      "cont_signal": 12,
+      "click_events": False
+    }
+
+    # header block, init infinite array, dummy block
+    init_print = [ json.dumps(header), '[', '[]' ]
+
+    #### start testing
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+      print('\n'.join(init_print))
+      try: 
+        status = status_block()
+        if status:
+          print(',[' + status + ']')
+          sys.exit(0)
+        else: 
+          print('status falsy')
+      except Exception as e:
+        print('error:', e)
+        sys.exit(1)
+
+    #### end testing
+
+    print('\n'.join(init_print))
+    del header
+    del init_print
+
+    while True:
+        try:
+            status = status_block()
+            if status:
+                print(',[' + (status) + ']')
+            time.sleep(2)
+        except Exception as e:
+            print('ERROR: ', e)
+            print('exiting')
+            sys.exit(1)
+
+if __name__ == '__main__':
+    main()

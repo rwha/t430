@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+
+TS="/var/tmp/timer"
+BD=$(tput bold)
+UB=$(tput sgr0)
+
+function error {
+	echo "ERROR: $*"
+	exit 1
+}
+
+function parse {
+	local full=$1
+	local name=${full#*-}
+	echo "${name%.*}"
+}
+
+function list_timers {
+	timers=$(ls "${TS}"-*.run 2>/dev/null)
+	[[ -n "${timers}" ]] && {
+		[[ -f "${timers}" ]] && {
+			timer_name=$(parse "${timers}")
+			timer_time=$(get_time "${timer_name}")
+			echo -e "${BD}${timer_name}${UB}:\t${timer_time}"
+		} || {
+			echo "Multiple timers running:"
+			for timer in ${timers} ; do
+				timer_name=$(parse "${timer}")
+				timer_time=$(get_time "${timer_name}")
+				echo -e "  ${BD}${timer_name}${UB}:  ${timer_time}"
+			done
+		}
+	} || {
+		echo "No timers running."
+	}
+}
+
+function get_time {
+	local name=$1
+	[ -f "${TS}-${name}.run" ] || error "get: timer ${name} does not exist."
+	local started=$(cat "${TS}-${name}.run")
+	local current=$(date +%s)
+	local secs=$((current-started))
+	[ $secs -gt 60 ] && {
+		mins=$((secs/60))
+		secs=$((secs-mins*60))
+		[ $mins -ge 60 ] && {
+			hrs=$((mins/60))
+			mins=$((mins-hrs*60))
+			[ $hrs -ge 24 ] && {
+				days=$((hrs/24))
+				hrs=$((hrs-days*24))
+				echo "${days}d ${hrs}h ${mins}m ${secs}s"
+			} || {
+				echo "${hrs}h ${mins}m ${secs}s"
+			}
+		} || {
+			echo "${mins}m ${secs}s"
+		}
+	} || {
+		echo "${secs}s"
+	}
+}
+
+function start_timer {
+	local name=$1
+	[ -f "${TS}-${name}.run" ] && error "start: timer ${name} is already running."
+	echo "$(date +%s)" > ${TS}-${name}.run
+	echo "Timer ${name} started."
+}
+
+function stop_timer {
+	local name=$1
+	[[ "${name}" == "--all" ]] && {
+		for timer in $(ls ${TS}-*.run 2>/dev/null) ; do
+			n=$(parse $timer)
+			t=$(get_time ${n})
+			rm "${timer}" && echo "${n}: ${t} -- removed."
+		done
+	} || {
+		[ -f "${TS}-${name}.run" ] || error "stop: timer ${name} does not exist."
+		get_time $name
+		rm "${TS}-${name}.run" && echo "Stopped ${name}"
+	}
+}
+
+function reset_timer {
+	local name=$1
+	[ -f "${TS}-${name}.run" ] || error "reset: timer ${name} does not exist."
+	local old=$(get_time $name)
+	echo $(date +%s) > "${TS}-${name}.run"
+	echo "${name}: ${old} -- reset to 0"
+}
+
+function usage {
+	cat <<- EOF
+	USAGE: timer [ list | [ start | stop | get | reset ] {name} ] ( --all )
+
+	  ${BD}list${UB}:   Show all current timers (default).
+	  ${BD}start${UB}:  Starts a new timer named {name}.
+	  ${BD}stop${UB}:   Stops and deletes the timer named {name}; shows final time.
+	  ${BD}get${UB}:    Shows elapsed time since timer {name} started (will not stop it).
+	  ${BD}reset${UB}:  Resets the timer {name}. 
+	
+	The commands stop and reset may be specified with the option --all to affect all timers.
+	
+	Output format of time is Wd Xh Ym Zs, showing only each unit that has elapsed 
+	in its entirety. A list of timers will have names prefixed, specified
+	timers (via get) will not.
+
+	Examples:
+	  $ timer get on-battery
+	  1h 14m 38s
+
+	  $ timer list
+	  Multiple timers running:
+	    ${BD}session-one${UB}: 33m 17s
+	    ${BD}on-battery${UB}: 1h 14m 39s
+
+	  $ timer stop session-one
+	  33m 19s
+	  Stopped session-one
+	
+	EOF
+	exit
+}
+
+function main {
+	local cmd=$1
+	[ -z $cmd ] && list_timers && exit 0
+	case "$cmd" in
+		l|list)
+			list_timers
+			;;
+		start)
+			shift
+			[ -n $1 ] && start_timer $1 || error "start: timer name required."
+			;;
+		stop)
+			shift
+			[ -n $1 ] && stop_timer $1 || error "stop: timer name required."
+			;;
+		get)
+			shift
+			[ -n $1 ] && get_time $1 || error "get: timer name required."
+			;;
+		reset)
+			shift
+			[ -n $1 ] && reset_timer $1 || error "reset: timer name required."
+			;;
+		*)
+			usage
+			;;
+	esac
+}
+
+main "$@"

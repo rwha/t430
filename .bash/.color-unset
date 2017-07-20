@@ -1,0 +1,5 @@
+unset Black Red Green Yellow Blue Purple Cyan White \
+	BBlack BRed BGreen BYellow BBlue BPurple BCyan BWhite \
+	On_Black On_Red On_Green On_Yellow On_Blue On_Purple On_Cyan On_White \
+	NC ALERT 
+

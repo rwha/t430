@@ -1,0 +1,109 @@
+#!/usr/bin/python3
+
+import sys
+import time
+
+text_span = '<span font="12" rise="6144"> %s </span>'
+icon_span = '<span font="18" rise="4096" color="%s">%s</span>'
+
+sep = '<span color="#7f7f7fc8"></span>'
+tux = '<span color="#ffffff8c"> </span>'
+icpu = ''
+iclock = ''
+imem = ''
+imnt = ''
+inet = ''
+iwifi = ''
+iplug = ''
+ibatt = ['', '', '', '', '']
+colors = {
+    "ERR": "#ff8080c8",
+    "WARN": "#ffcc50c8",
+    "OK": "#80ff80c8"
+}
+
+def color(x):
+    return colors.get(x, '#ffffffc8')
+
+def status(x):
+    if x <= 70:
+        return 'OK'
+    elif x > 85:
+        return 'ERR'
+    else:
+        return 'WARN'
+
+def print_line(message):
+    """STDOUT unbuffered."""
+    sys.stdout.write(message + '\n')
+    sys.stdout.flush()
+
+def get_load():
+    with open('/proc/loadavg') as f:
+      load = round(float(f.readline().split()[0]) * 100 / 4)
+    i = icon_span % (color(status(load)), icpu)
+    s = text_span % (str(load) + '%')
+    return sep + i + s
+
+def get_mem():
+    with open('/proc/meminfo') as f:
+      t,_,a = [l.split()[1] for l in f.readlines()[:3]]
+    mem = int((1 - int(a) / int(t)) * 100)
+    i = icon_span % (color(status(mem)), imem)
+    s = text_span % (str(mem) + '%')
+    return sep + i + s
+
+def get_power():
+    with open('/sys/class/power_supply/AC/online') as plug:
+        plugged = int(plug.readline())
+        if plugged:
+            return sep + icon_span % (colors['OK'], iplug + ' ')
+    with open('/sys/class/power_supply/BAT0/capacity') as cap:
+        charge = int(cap.readline())
+    i = icon_span % (color(status(100 - charge)), ibatt[round(charge/25)])
+    s = text_span % (str(charge) + '%')
+    return sep + i + s
+
+def get_time():
+    i = icon_span % (color('STD'), iclock)
+    s = text_span % time.strftime('%D %r')
+    return sep + i + s
+
+def get_mount():
+    from shutil import disk_usage
+    t,u,_ = disk_usage('/')
+    mnt = round((u/t) * 100)
+    i = icon_span % (color(status(mnt)), imnt)
+    s = text_span % (str(mnt) + '%')
+    return sep + i + s
+
+def get_net():
+    import socket
+    so = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+      so.connect(('8.8.8.8', 80))
+      ip = so.getsockname()[0]
+    except:
+      return None
+    finally:
+      so.close()
+    if ip:
+      i = icon_span % (color('STD'), iwifi)
+      s = text_span % str(ip)
+      return sep + i + s
+    else:
+      return None
+
+def main():
+    while True:
+        try:
+            status = get_load() + get_mem() + get_power() + get_time()
+            print_line(status + sep + tux)
+            time.sleep(3)
+        except KeyboardInterrupt:
+            sys.exit(1)
+        except Exception:
+            sys.exit(1)
+
+if __name__ == '__main__':
+    main()

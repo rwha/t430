@@ -1,0 +1,4 @@
+#!/bin/bash
+# keeps logging to console/sway log
+
+exec /usr/bin/firefox "$@" &>/tmp/firefox.log

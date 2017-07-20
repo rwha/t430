@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+import time
+
+"""
+Send status information for swaybar.
+
+Example:
+  {
+    "full_text": "NET: 10.10.10.5 (1 Gb/s)",
+    "short_text": "10.10.10.5",
+    "color": "#00ff00",
+    "background": "#c1c1c1",
+    "border": "#ee0000",
+    "min_width": 300,
+    "align": "right",
+    "urgent": false,
+    "name": "ethernet",
+    "instance": "eth0",
+    "separator": true,
+    "separator_block_width": 9
+  }
+
+"""
+
+class Metric(object):
+  """Create a dict with basic keys defined."""
+  def __init__(self, name):
+    self.block = {}
+    self.block['name'] = name
+    self.block['separator_block_width'] = 21
+  def text(self, string, icon=None, color='C_STD'):
+    """Build the full_text value."""
+
+    colors = { 
+      "C_ERR": "#ff8080c8",
+      "C_WARN": "#ffcc50c8",
+      "C_OK": "#80ff80c8",
+      "C_STD": "#ffffffc8"
+    }
+
+    ic = colors[color] if color in colors.keys() else colors['C_STD']
+    
+    # rise is the negative two thirds the bar height plus one third the font size
+    # (BH / 3) * 2 + FH / 3
+    # 12 == -28672
+    # 15 == -29696
+    # 18 == -30720
+    # 21 == -31744
+    # 24 == -32768
+
+    self.block['markup'] = 'pango'
+   
+    if icon:
+      s_icon = '<span font="21" rise="-31744" color="'+ic+'">'+icon+'</span>'
+    if string:
+      s_text = '<span font="12" rise="-28672"> ' + string + ' </span>'
+    if icon and string:
+      full_text = str(s_icon + s_text)
+    elif not icon:
+      full_text = str(s_text)
+    elif not string:
+      full_text = str(s_icon)
+
+    self.block['full_text'] = full_text
+
+  def add(self, key, value):
+    self.block[key] = value
+    
+  def jsonify(self):
+    return json.dumps(self.block)
+
+
+def print_line(message):
+  """STDOUT unbuffered."""
+  sys.stdout.write(message + '\n')
+  sys.stdout.flush()
+
+def get_cpu():
+  procs = 4
+  cpu = Metric('cpu_load')
+  icon = ''
+  load = int(os.getloadavg()[0] * 100 / procs)
+  if load <= 70:
+    c = 'C_OK'
+  elif load > 70 and load <= 88:
+    c = 'C_WARN'
+  elif load > 88:
+    c = 'C_ERR'
+  cpu.text(str(load) + '%', icon, c)
+  return cpu.jsonify() or None
+
+def get_mem():
+  mem = Metric('mem_usage')
+  icon = ''
+  with open('/proc/meminfo') as f:
+      t,a = [l.split()[1] for l in f.readlines() if l.startswith('MemTotal') or
+              l.startswith('MemAvailable')]
+  used = int((1 - int(a) / int(t)) * 100)
+  if used <= 70:
+      c = 'C_OK'
+  elif used > 70 and used <= 85:
+      c = 'C_WARN'
+  elif used > 85:
+      c = 'C_ERR'
+  mem.text(str(used) + '%' , icon, c)
+  return mem.jsonify() or None
+
+
+def get_mount():
+  mount = Metric('disk_usage')
+  icon = ''
+  # disk = /proc/partitions|/proc/diskstats|/proc/fs/
+  usage = '5%'
+  mount.text(usage, icon, 'C_OK')
+  return mount.jsonify() or None
+
+
+def get_net():
+  net = Metric('net_stat')
+  icon_w = ''
+  with open('/proc/net/dev') as f:
+    ifs = [l.split(':')[0] for l in f.readlines()[:2]]
+  devs = [i.strip() for i in ifs]
+  for dev in devs:
+    with open('/sys/class/net/' + dev + '/operstate') as f:
+      pass
+  string = 'Berlin'
+  net.text(string, icon_w, 'C_OK')
+  return net.jsonify() or None
+
+def get_power():
+  power = Metric('power')
+  icons = [ '', '', '', '', '', '' ]
+
+  with open('/sys/class/power_supply/AC/online') as plug:
+    plugged = int(plug.read(1))
+  with open('/sys/class/power_supply/BAT0/capacity') as cap:
+    charge = int(cap.read().split('\n')[0])
+
+  if plugged:
+    return None
+  else:
+    string = str(charge) + '%'
+    if charge > 80:
+      icon = icons[1]
+      color = 'C_OK'
+    elif charge <= 80 and charge > 60:
+      icon = icons[2]
+      color = 'C_OK'
+    elif charge <= 60 and charge > 30:
+      icon = icons[3]
+      color = 'C_WARN'
+    elif charge <= 30 and charge > 15:
+      icon = icons[4]
+      color = 'C_ERR'
+    elif charge <= 15:
+      icon = icons[5]
+      color = 'C_ERR'
+      power.add('urgent', true)
+  power.text(string, icon, color)
+  return power.jsonify() or None
+
+def get_datestring():
+  date_block = Metric('date')
+  icon = '' 
+  string = time.strftime('%D %r')
+  date_block.text(string, icon, color='C_STD')
+  date_block.add('align', 'right')
+  return date_block.jsonify() or None
+
+def status_block():
+    block = []
+    block.append(get_datestring())
+    block.append(get_cpu())
+    block.append(get_mem())
+    block.append(get_power())
+    block.append(json.dumps({"full_text": "", "color": "#c1c1c1", "align":"center", "separator": False, "min_width": 40}))
+    while None in block:
+        block.remove(None)
+
+    return ',[' + ','.join(block) + ']'
+
+def main():
+  """ Print the header, initialize the infinite array, loop status output. """
+
+  header = {
+    "version": 1,
+    "stop_signal": 10,
+    "cont_signal": 12,
+    "click_events": False
+  }
+
+  # header block, init infinite array
+  print_line(json.dumps(header))
+  print_line('[')
+
+  while True:
+    try:
+      print_line(status_block())
+      time.sleep(1)
+    except KeyboardInterrupt:
+      sys.exit(1)
+
+if __name__ == '__main__':
+    main()
